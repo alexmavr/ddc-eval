@@ -169,9 +169,10 @@ cp /home/docker/docker_subscription.lic /home/docker/ucp_license.lic
 
 echo "Installing UCP"
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+	-e UCP_ADMIN_PASSWORD=ddcpassword \
 	-v /home/docker/ucp_license.lic:/docker_subscription.lic --name ucp docker/ucp:1.0.1 \
 	install --host-address $MACHINE_IP --san $MACHINE_IP --fresh-install \
-	--dns 127.0.0.1 --swarm-port 8888 --controller-port 444
+	--dns 127.0.0.1 --swarm-port 8888 --controller-port 444 
 
 
 echo "Installing DTR"
@@ -220,7 +221,7 @@ curl -k -Lik \
      -H 'Content-Type: application/json; charset=UTF-8' \
      -H 'Accept: */*' \
      -H 'X-Requested-With: XMLHttpRequest' \
-     --data-binary '{"method":"managed","managed":{"users":[{"username":"admin","password":"dtrpassword","isNew":true,"isAdmin":true,"isReadWrite":false,"isReadOnly":false,"teamsChanged":true}]}}'
+     --data-binary '{"method":"managed","managed":{"users":[{"username":"admin","password":"ddcpassword","isNew":true,"isAdmin":true,"isReadWrite":false,"isReadOnly":false,"teamsChanged":true}]}}'
 
 sleep 15
 # General DTR settings and UCP bypass auth
@@ -244,7 +245,7 @@ release_channel: \"\"
 echo "Configuring UCP to use DTR"
 wget https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64
 chmod +x jq-linux64
-TOKEN=$(curl -k -c jar https://$MACHINE_IP:444/auth/login -d '{"username": "admin", "password": "orca"}' -X POST -s | ./jq-linux64 -r ".auth_token")
+TOKEN=$(curl -k -c jar https://$MACHINE_IP:444/auth/login -d '{"username": "admin", "password": "ddcpassword"}' -X POST -s | ./jq-linux64 -r ".auth_token")
 curl -k -s -c jar -H "Authorization: Bearer ${TOKEN}" https://$MACHINE_IP:444/api/config/registry -X POST --data '{"url": "https://ddc.eval.docker.com:443", "insecure":true}'
 curl -k -s -H "Authorization: Bearer ${TOKEN}" https://$MACHINE_IP:444/api/clientbundle -X POST > /home/docker/admin_bundle.zip
 
@@ -262,11 +263,11 @@ echo "You may access Docker Datacenter at the following URLs:"
 echo ""
 echo "Docker Universal Control Plane: $UCP_URL"
 echo "- UCP Admin Username: admin"
-echo "- UCP Admin Password: orca"
+echo "- UCP Admin Password: ddcpassword"
 echo ""
 echo "Docker Trusted Registry: $DTR_URL"
 echo "- DTR Admin Username: admin"
-echo "- DTR Admin Password: dtrpassword"
+echo "- DTR Admin Password: ddcpassword"
 echo ""
 echo "The domain name of the Docker Trusted Registry is ddc.eval.docker.com"
 echo "To completely remove this evaluation installation, run the following command:"
