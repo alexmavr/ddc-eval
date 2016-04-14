@@ -7,9 +7,9 @@
 #    : :; :: :; :: :__:_____:: :: ,. ::_____:' .; ;:_____:' .; :' .; :`.  .'
 #    :___.':___.'`.__.'      :_;:_;:_;       `.__,_;      `.__.'`.__.':_,._;
 #
-#              Evaluation Installer for Docker Datacenter v1.0
+#              Evaluation Installer for Docker Datacenter v1.0.4
 #
-#		   	 - Docker Universal Control Plane v1.0.1
+#		   	 - Docker Universal Control Plane v1.0.4
 #		   	 - Docker Trusted Registry v1.4.3
 #                                                                      
 # 	Instructions:	Place this script in the same directory as a license file 
@@ -105,7 +105,7 @@ fi
 echo "Using $MACHINE_DRIVER as a virtualization driver. To use another driver, restart this script with the MACHINE_DRIVER and MACHINE_DRIVER_FLAGS environment variables set"
 
 UCP_IMAGE="docker/ucp"
-UCP_TAG="1.0.1"
+UCP_TAG="1.0.4"
 
 DTR_IMAGE="docker/trusted-registry"
 DTR_TAG="1.4.3"
@@ -114,7 +114,9 @@ echo "UCP Image: $UCP_IMAGE:$UCP_TAG"
 echo "DTR Image: $DTR_IMAGE:$DTR_TAG"
 
 echo "Creating a VM..."
-docker-machine create --driver "$MACHINE_DRIVER" \
+docker-machine create  \
+	--kvm-boot2docker-url https://github.com/boot2docker/boot2docker/releases/download/v1.11.0-rc3/boot2docker.iso \
+	--driver "$MACHINE_DRIVER" \
 	--engine-insecure-registry ddc.eval.docker.com \
 	--engine-insecure-registry 127.0.0.1 \
 	--engine-opt dns=127.0.0.1\
@@ -170,7 +172,7 @@ cp /home/docker/docker_subscription.lic /home/docker/ucp_license.lic
 echo "Installing UCP"
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
 	-e UCP_ADMIN_PASSWORD=ddcpassword \
-	-v /home/docker/ucp_license.lic:/docker_subscription.lic --name ucp docker/ucp:1.0.1 \
+	-v /home/docker/ucp_license.lic:/docker_subscription.lic --name ucp docker/ucp:1.0.4 \
 	install --host-address $MACHINE_IP --san $MACHINE_IP --fresh-install \
 	--dns 127.0.0.1 --swarm-port 8888 --controller-port 444 
 
@@ -232,7 +234,7 @@ domain_name: \"ddc.eval.docker.com\"
 notary_server: \"\"
 notary_cert: \"\"
 notary_verify_cert: false
-auth_bypass_ca: \"$(docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --name ucp docker/ucp:1.0.1 dump-certs --cluster -ca)\"
+auth_bypass_ca: \"$(docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --name ucp docker/ucp:1.0.4 dump-certs --cluster -ca)\"
 auth_bypass_ou: \"\"
 extra_env:
 HTTP_PROXY: \"\"
