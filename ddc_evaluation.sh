@@ -7,17 +7,17 @@
 #    : :; :: :; :: :__:_____:: :: ,. ::_____:' .; ;:_____:' .; :' .; :`.  .'
 #    :___.':___.'`.__.'      :_;:_;:_;       `.__,_;      `.__.'`.__.':_,._;
 #
-#              Evaluation Installer for Docker Datacenter v1.0.4
+#              Evaluation Installer for Docker Datacenter v1.1.0
 #
-#		   	 - Docker Universal Control Plane v1.0.4
-#		   	 - Docker Trusted Registry v1.4.3
+#		   	 - Docker Universal Control Plane v1.1.0
+#		   	 - Docker Trusted Registry v2.0.0
 #                                                                      
 # 	Instructions:	Place this script in the same directory as a license file 
 #			called "docker_subscription.lic" and execute with bash:
 #				bash ./ddc_evaluation.sh
 #
 #			or, just cd to the same directory as the license and run:
-#				bash<(curl -L <URL_of_this_script>)
+#				curl -L git.io/vVk8S | bash
 #					
 #			The first argument to the script can be an absolute path to a license file:
 #				bash ./ddc_evaluation ~/other_docker_subscription.lic
@@ -48,10 +48,10 @@
 #       
 #			 ** What's in the box? **
 #
-#	This script creates a boot2docker VM named "ddc-evaluation', containing DTR, UCP
+#	This script creates a boot2docker VM named "ddc-eval', containing DTR, UCP
 #	and a dnsmasq container. The DTR and UCP instances are licensed with the provided
-#	license and are cross-configured to recognize each other. Also, a UCP admin bundle 
-#	is located at /home/docker/ucp_admin_bundle.zip
+#	license and are cross-configured to recognize each other. Also, an extracted UCP admin 
+#	bundle is located at /home/docker/bundle
 #
 #   LEGAL DISCLAIMER
 #   EXCEPT WHERE EXPRESSLY PROVIDED OTHERWISE, THE SCRIPT, AND ALL CONTENT 
@@ -105,21 +105,17 @@ fi
 echo "Using $MACHINE_DRIVER as a virtualization driver. To use another driver, restart this script with the MACHINE_DRIVER and MACHINE_DRIVER_FLAGS environment variables set"
 
 UCP_IMAGE="docker/ucp"
-UCP_TAG="1.0.4"
+UCP_TAG="1.1.0"
 
-DTR_IMAGE="docker/trusted-registry"
-DTR_TAG="1.4.3"
+DTR_IMAGE="docker/dtr"
+DTR_TAG="2.0.0"
 
 echo "UCP Image: $UCP_IMAGE:$UCP_TAG"
 echo "DTR Image: $DTR_IMAGE:$DTR_TAG"
 
 echo "Creating a VM..."
 docker-machine create  \
-	--kvm-boot2docker-url https://github.com/boot2docker/boot2docker/releases/download/v1.11.0-rc3/boot2docker.iso \
 	--driver "$MACHINE_DRIVER" \
-	--engine-insecure-registry ddc.eval.docker.com \
-	--engine-insecure-registry 127.0.0.1 \
-	--engine-opt dns=127.0.0.1\
 	$MACHINE_DRIVER_FLAGS $MACHINE_NAME
 
 echo "VM created"
@@ -130,148 +126,95 @@ MACHINE_IP=$(docker-machine ip $MACHINE_NAME)
 # Copy the license file to the VM
 docker-machine scp $LICENSE_FILE "$MACHINE_NAME":/home/docker/docker_subscription.lic
 
+# Pass in the environment variables
 echo $MACHINE_IP | docker-machine ssh "$MACHINE_NAME" "tee > /home/docker/machine_ip"
+echo "$UCP_IMAGE:$UCP_TAG" | docker-machine ssh "$MACHINE_NAME" "tee > /home/docker/ucp_image"
+echo "$DTR_IMAGE:$DTR_TAG" | docker-machine ssh "$MACHINE_NAME" "tee > /home/docker/dtr_image"
 
 # Jump in the box
 docker-machine ssh "$MACHINE_NAME" "sudo sh" << 'EOF'
 MACHINE_IP=$(cat /home/docker/machine_ip)
+UCP_IMAGE=$(cat /home/docker/ucp_image)
+DTR_IMAGE=$(cat /home/docker/dtr_image)
 
 echo "Starting syslog"
 syslogd
 
-echo "Starting up dnsmasq"
-echo "
-listen-address=0.0.0.0
-listen-address=127.0.0.1
-interface=eth1
-interface=eth0
-user=root
-
-no-resolv
-server=8.8.8.8
-server=8.8.4.4
-
-address=/ddc.eval.docker.com/127.0.0.1
-" > /opt/dnsmasq.conf
+echo "Restarting docker daemon in order to trust the VM IP"
+echo "EXTRA_ARGS=\"\$EXTRA_ARGS --insecure-registry $MACHINE_IP\"" >> /var/lib/boot2docker/profile
+/etc/init.d/docker restart
 
 
-# TODO: thin out this image
-docker run \
-	--name dnsmasq \
-	-d \
-	-p 0.0.0.0:53:53/udp \
-	-p 8080:8080 \
-	-v /opt/dnsmasq.conf:/etc/dnsmasq.conf \
-	quay.io/jpillora/dnsmasq-gui:latest
-
-echo "nameserver 127.0.0.1" > /etc/resolv.conf
-
-# Copy UCP license
-cp /home/docker/docker_subscription.lic /home/docker/ucp_license.lic
+# TODO: ping the daemon
+sleep 10
 
 echo "Installing UCP"
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
 	-e UCP_ADMIN_PASSWORD=ddcpassword \
-	-v /home/docker/ucp_license.lic:/docker_subscription.lic --name ucp docker/ucp:1.0.4 \
+	-v /home/docker/docker_subscription.lic:/docker_subscription.lic --name ucp $UCP_IMAGE \
 	install --host-address $MACHINE_IP --san $MACHINE_IP --fresh-install \
-	--dns 127.0.0.1 --swarm-port 8888 --controller-port 444 
+	--swarm-port 8888 --controller-port 444 
 
+UCP_URL=https://$MACHINE_IP:444
 
-echo "Installing DTR"
-docker run docker/trusted-registry:1.4.3 install | sh
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --name ucp $UCP_IMAGE dump-certs -cluster -ca > ucp_root_ca.pem
 
-sleep 20
-# Configure DTR domain
-echo "Configuring DTR to authorize UCP traffic"
-echo "load_balancer_http_port: 80
-load_balancer_https_port: 443
-domain_name: \"ddc.eval.docker.com\"
-notary_server: \"\"
-notary_cert: \"\"
-notary_verify_cert: false
-auth_bypass_ca: \"\"
-auth_bypass_ou: \"\"
-extra_env:
-HTTP_PROXY: \"\"
-HTTPS_PROXY: \"\"
-NO_PROXY: \"\"
-disable_upgrades: false
-release_channel: \"\"
-" > /usr/local/etc/dtr/hub.yml
-
-sleep 15
-docker run docker/trusted-registry:1.4.3 stop | sh
-docker run docker/trusted-registry:1.4.3 install | sh
-sleep 35
-
-
-echo "Configuring DTR"
-# Injecting License
-tail -c +4 /home/docker/docker_subscription.lic > /home/docker/dtr_license.lic
-curl -Lik \
-	-X PUT https://$MACHINE_IP/api/v0/admin/settings/license \
-	-H 'Content-Type: application/json; charset=UTF-8' \
-	-H 'Accept: */*' \
-	-H 'X-Requested-With: XMLHttpRequest' \
-	--data-binary @/home/docker/dtr_license.lic
-
-sleep 10
-
-# Creating Admin User
-curl -k -Lik \
-     -X PUT https://$MACHINE_IP/api/v0/admin/settings/auth \
-     -H 'Content-Type: application/json; charset=UTF-8' \
-     -H 'Accept: */*' \
-     -H 'X-Requested-With: XMLHttpRequest' \
-     --data-binary '{"method":"managed","managed":{"users":[{"username":"admin","password":"ddcpassword","isNew":true,"isAdmin":true,"isReadWrite":false,"isReadOnly":false,"teamsChanged":true}]}}'
-
-sleep 15
-# General DTR settings and UCP bypass auth
-echo "Configuring DTR to authorize UCP traffic"
-echo "load_balancer_http_port: 80
-load_balancer_https_port: 443
-domain_name: \"ddc.eval.docker.com\"
-notary_server: \"\"
-notary_cert: \"\"
-notary_verify_cert: false
-auth_bypass_ca: \"$(docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --name ucp docker/ucp:1.0.4 dump-certs --cluster -ca)\"
-auth_bypass_ou: \"\"
-extra_env:
-HTTP_PROXY: \"\"
-HTTPS_PROXY: \"\"
-NO_PROXY: \"\"
-disable_upgrades: false
-release_channel: \"\"
-" > /usr/local/etc/dtr/hub.yml
-
-echo "Configuring UCP to use DTR"
+echo "Obtaining a UCP admin bundle"
 wget https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64
 chmod +x jq-linux64
-TOKEN=$(curl -k -c jar https://$MACHINE_IP:444/auth/login -d '{"username": "admin", "password": "ddcpassword"}' -X POST -s | ./jq-linux64 -r ".auth_token")
-curl -k -s -c jar -H "Authorization: Bearer ${TOKEN}" https://$MACHINE_IP:444/api/config/registry -X POST --data '{"url": "https://ddc.eval.docker.com:443", "insecure":true}'
-curl -k -s -H "Authorization: Bearer ${TOKEN}" https://$MACHINE_IP:444/api/clientbundle -X POST > /home/docker/admin_bundle.zip
+TOKEN=$(curl -k -c jar $UCP_URL/auth/login -d '{"username": "admin", "password": "ddcpassword"}' -X POST -s | ./jq-linux64 -r ".auth_token")
+curl -k -s -H "Authorization: Bearer ${TOKEN}" $UCP_URL/api/clientbundle -X POST > /home/docker/admin_bundle.zip
+mkdir -p /home/docker/bundle
+cd /home/docker/bundle
+unzip /home/docker/admin_bundle
+source env.sh
 
-rm /home/docker/dtr_license.lic
-rm /home/docker/ucp_license.lic
+# Get the UCP CA
+curl -k $UCP_URL/ca > ucp-ca.pem
+echo "Installing DTR"
+docker run --rm $DTR_IMAGE install --ucp-url $UCP_URL \
+	--dtr-load-balancer $MACHINE_IP:443 \
+	--ucp-username admin \
+	--ucp-password ddcpassword \
+	--ucp-ca "$(cat ucp-ca.pem)"
+
+DTR_URL=https://$MACHINE_IP:443
+
+
+sleep 7
+
+echo "Configuring DTR to trust UCP"
+# sed voodoo
+DTR_CONFIG_DATA="{\"authBypassCA\":\"$(cat ../ucp_root_ca.pem | sed ':begin;$!N;s|\n|\\n|;tbegin')\"}"
+curl -u admin:ddcpassword -k  -H "Content-Type: application/json" $DTR_URL/api/v0/meta/settings -X POST --data-binary "$DTR_CONFIG_DATA"
+
+sleep 2
+
+echo "Configuring UCP to use DTR"
+TOKEN=$(curl -k -c jar https://$MACHINE_IP:444/auth/login -d '{"username": "admin", "password": "ddcpassword"}' -X POST -s | /home/docker/jq-linux64 -r ".auth_token")
+UCP_CONFIG_DATA="{\"url\":\"$DTR_URL\", \"insecure\":true }"
+curl -k -s -c jar -H "Authorization: Bearer ${TOKEN}" $UCP_URL/api/config/registry -X POST --data "$UCP_CONFIG_DATA"
 EOF
 
 DTR_URL="https://$MACHINE_IP:443"
 UCP_URL="https://$MACHINE_IP:444"
+
 echo ""
 echo ""
-echo "DDC Installation Completed"
+echo "Docker Datacenter Installation Completed"
 echo "========================================================================="
 echo "You may access Docker Datacenter at the following URLs:"
 echo ""
 echo "Docker Universal Control Plane: $UCP_URL"
-echo "- UCP Admin Username: admin"
-echo "- UCP Admin Password: ddcpassword"
-echo ""
 echo "Docker Trusted Registry: $DTR_URL"
-echo "- DTR Admin Username: admin"
-echo "- DTR Admin Password: ddcpassword"
 echo ""
-echo "The domain name of the Docker Trusted Registry is ddc.eval.docker.com"
+echo "- Admin Username: admin"
+echo "- Admin Password: ddcpassword"
+echo ""
+echo "The Docker Trusted Registry can be accessed as a registry at $MACHINE_IP"
+echo ""
+echo "The certificates used to sign UCP and DTR will not be trusted by your browser."
+echo ""
 echo "To completely remove this evaluation installation, run the following command:"
 echo " docker-machine rm ddc-eval"
 echo "========================================================================"
