@@ -7,10 +7,10 @@
 #    : :; :: :; :: :__:_____:: :: ,. ::_____:' .; ;:_____:' .; :' .; :`.  .'
 #    :___.':___.'`.__.'      :_;:_;:_;       `.__,_;      `.__.'`.__.':_,._;
 #
-#              Evaluation Installer for Docker Datacenter v1.1.0
+#              Evaluation Installer for Docker Datacenter v1.1.1
 #
-#		   	 - Docker Universal Control Plane v1.1.0
-#		   	 - Docker Trusted Registry v2.0.0
+#		   	 - Docker Universal Control Plane v1.1.1
+#		   	 - Docker Trusted Registry v2.0.1
 #                                                                      
 # 	Instructions:	Place this script in the same directory as a license file 
 #			called "docker_subscription.lic" and execute with bash:
@@ -105,10 +105,10 @@ fi
 echo "Using $MACHINE_DRIVER as a virtualization driver. To use another driver, restart this script with the MACHINE_DRIVER and MACHINE_DRIVER_FLAGS environment variables set"
 
 UCP_IMAGE="docker/ucp"
-UCP_TAG="1.1.0"
+UCP_TAG="1.1.1"
 
 DTR_IMAGE="docker/dtr"
-DTR_TAG="2.0.0"
+DTR_TAG="2.0.1"
 
 echo "UCP Image: $UCP_IMAGE:$UCP_TAG"
 echo "DTR Image: $DTR_IMAGE:$DTR_TAG"
@@ -157,40 +157,25 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
 
 UCP_URL=https://$MACHINE_IP:444
 
-docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --name ucp $UCP_IMAGE dump-certs -cluster -ca > ucp_root_ca.pem
-
-echo "Obtaining a UCP admin bundle"
-wget https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64
-chmod +x jq-linux64
-TOKEN=$(curl -k -c jar $UCP_URL/auth/login -d '{"username": "admin", "password": "ddcpassword"}' -X POST -s | ./jq-linux64 -r ".auth_token")
-curl -k -s -H "Authorization: Bearer ${TOKEN}" $UCP_URL/api/clientbundle -X POST > /home/docker/admin_bundle.zip
-mkdir -p /home/docker/bundle
-cd /home/docker/bundle
-unzip /home/docker/admin_bundle
-source env.sh
-
 # Get the UCP CA
 curl -k $UCP_URL/ca > ucp-ca.pem
 echo "Installing DTR"
 docker run --rm $DTR_IMAGE install --ucp-url $UCP_URL \
-	--dtr-load-balancer $MACHINE_IP:443 \
+	--dtr-external-url $MACHINE_IP:443 \
 	--ucp-username admin \
 	--ucp-password ddcpassword \
 	--ucp-ca "$(cat ucp-ca.pem)"
 
-DTR_URL=https://$MACHINE_IP:443
-
-
-sleep 7
+DTR_URL=https://$MACHINE_IP
 
 echo "Configuring DTR to trust UCP"
-# sed voodoo
-DTR_CONFIG_DATA="{\"authBypassCA\":\"$(cat ../ucp_root_ca.pem | sed ':begin;$!N;s|\n|\\n|;tbegin')\"}"
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --name ucp $UCP_IMAGE dump-certs --cluster -ca > ucp_root_ca.pem
+DTR_CONFIG_DATA="{\"authBypassCA\":\"$(cat ucp_root_ca.pem | sed ':begin;$!N;s|\n|\\n|;tbegin')\"}"
 curl -u admin:ddcpassword -k  -H "Content-Type: application/json" $DTR_URL/api/v0/meta/settings -X POST --data-binary "$DTR_CONFIG_DATA"
 
-sleep 2
-
 echo "Configuring UCP to use DTR"
+wget https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64
+chmod +x /home/docker/jq-linux64
 TOKEN=$(curl -k -c jar https://$MACHINE_IP:444/auth/login -d '{"username": "admin", "password": "ddcpassword"}' -X POST -s | /home/docker/jq-linux64 -r ".auth_token")
 UCP_CONFIG_DATA="{\"url\":\"$DTR_URL\", \"insecure\":true }"
 curl -k -s -c jar -H "Authorization: Bearer ${TOKEN}" $UCP_URL/api/config/registry -X POST --data "$UCP_CONFIG_DATA"
