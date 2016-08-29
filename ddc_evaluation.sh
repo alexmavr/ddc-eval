@@ -99,7 +99,7 @@ if [[ $MACHINE_DRIVER == '' ]]; then
 	MACHINE_DRIVER_FLAGS="--virtualbox-memory 2048 --virtualbox-disk-size 16000"
 fi
 if [[ $MACHINE_DRIVER == 'kvm' ]]; then
-	MACHINE_DRIVER_FLAGS="--kvm-memory 2048 --kvm-disk-size 16000"
+	MACHINE_DRIVER_FLAGS="--kvm-memory 2048 --kvm-disk-size 16000 --kvm-boot2docker-url file:///home/alexmavr/Downloads/boot2docker-experimental.iso"
 fi
 
 echo "Using $MACHINE_DRIVER as a virtualization driver. To use another driver, restart this script with the MACHINE_DRIVER and MACHINE_DRIVER_FLAGS environment variables set"
@@ -124,7 +124,7 @@ echo "VM created"
 MACHINE_IP=$(docker-machine ip $MACHINE_NAME)
 
 # Copy the license file to the VM
-docker-machine scp $LICENSE_FILE "$MACHINE_NAME":/home/docker/docker_subscription.lic
+docker-machine scp localhost:$LICENSE_FILE "$MACHINE_NAME":/home/docker/docker_subscription.lic
 
 # Pass in the environment variables
 echo $MACHINE_IP | docker-machine ssh "$MACHINE_NAME" "tee > /home/docker/machine_ip"
