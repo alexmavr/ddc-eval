@@ -7,10 +7,10 @@
 #    : :; :: :; :: :__:_____:: :: ,. ::_____:' .; ;:_____:' .; :' .; :`.  .'
 #    :___.':___.'`.__.'      :_;:_;:_;       `.__,_;      `.__.'`.__.':_,._;
 #
-#              Evaluation Installer for Docker Datacenter v1.1.1
+#              Evaluation Installer for Docker Datacenter v1.1.3
 #
-#		   	 - Docker Universal Control Plane v1.1.1
-#		   	 - Docker Trusted Registry v2.0.1
+#		   	 - Docker Universal Control Plane v1.1.3
+#		   	 - Docker Trusted Registry v2.0.3
 #                                                                      
 # 	Instructions:	Place this script in the same directory as a license file 
 #			called "docker_subscription.lic" and execute with bash:
@@ -105,10 +105,10 @@ fi
 echo "Using $MACHINE_DRIVER as a virtualization driver. To use another driver, restart this script with the MACHINE_DRIVER and MACHINE_DRIVER_FLAGS environment variables set"
 
 UCP_IMAGE="docker/ucp"
-UCP_TAG="1.1.1"
+UCP_TAG="1.1.3"
 
 DTR_IMAGE="docker/dtr"
-DTR_TAG="2.0.1"
+DTR_TAG="2.0.3"
 
 echo "UCP Image: $UCP_IMAGE:$UCP_TAG"
 echo "DTR Image: $DTR_IMAGE:$DTR_TAG"
