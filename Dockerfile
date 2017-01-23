@@ -1,3 +1,3 @@
-FROM alpine:3.4
-RUN apk add --update curl && rm -rf /var/cache/apk/*
-ENTRYPOINT ["curl", "-sL", "https://git.io/vVk8S"]
+FROM docker:1.11.2
+ADD ./ddc_install.sh /ddc_install.sh
+ENTRYPOINT ["sh", "/ddc_install.sh"]

@@ -1,0 +1,4 @@
+FROM docker:1.11.2-dind
+EXPOSE 443
+EXPOSE 444
+ENTRYPOINT ["sh", "/usr/local/bin/dockerd-entrypoint.sh"]
